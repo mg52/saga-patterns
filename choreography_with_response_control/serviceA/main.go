@@ -17,6 +17,8 @@ func failOnError(err error, msg string) {
 	}
 }
 
+// Service A gets event from client and it completes its rollout and sends to Service B queue.
+// Also it gets event from Service B if Service B completed its process successfully.
 func main() {
 	conn, err := amqp.Dial("amqp://admin:123456@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
@@ -65,11 +67,6 @@ func main() {
 			} else if tr.Sender == "serviceB" {
 				if tr.ServiceBStatus {
 					slog.Info("All transactions completed successfully", slog.Int("transactionID", tr.TransactionID))
-				} else {
-					slog.Info("Service B is completed unsuccessfully. Service A Rollback is starting", slog.Int("transactionID", tr.TransactionID))
-					// Service A rollback simulation
-					time.Sleep(time.Second * 2)
-					slog.Info("Service A rollback is completed successfully", slog.Int("transactionID", tr.TransactionID))
 				}
 			}
 		}

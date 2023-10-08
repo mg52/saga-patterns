@@ -17,6 +17,7 @@ func failOnError(err error, msg string) {
 	}
 }
 
+// Service B gets event from Service A and it gets error during rollout and sends it to error queue.
 func main() {
 	conn, err := amqp.Dial("amqp://admin:123456@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
@@ -26,8 +27,8 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	resMsgs, err := ch.Consume(
-		"service_a_queue", // queue
+	msgs, err := ch.Consume(
+		"service_b_queue", // queue
 		"",                // consumer
 		true,              // auto ack
 		false,             // exclusive
@@ -37,24 +38,25 @@ func main() {
 	)
 	failOnError(err, "Failed to register a consumer")
 
+	var forever chan struct{}
+
 	go func() {
-		for d := range resMsgs {
+		for d := range msgs {
 			var tr *pkg.Transaction
 			json.Unmarshal(d.Body, &tr)
-			if tr.Sender == "client" {
-				slog.Info("Service A started its process by request from client", slog.Int("transactionID", tr.TransactionID))
-				// Service A business simulation
+			if tr.Sender == "serviceA" && tr.ServiceAStatus {
+				slog.Info("Service B started its process by request from service A ", slog.Int("transactionID", tr.TransactionID))
 				time.Sleep(time.Second * 2)
-				slog.Info("Service A rollout is completed successfully", slog.Int("transactionID", tr.TransactionID))
+				slog.Info("Service B rollout is completed unsuccessfully", slog.Int("transactionID", tr.TransactionID))
 
-				tr.ServiceAStatus = true
-				tr.Sender = "serviceA"
-				slog.Info("Service A sends the event to Service B", slog.Int("transactionID", tr.TransactionID))
+				tr.ServiceBStatus = false
+				tr.Sender = "serviceB"
+				slog.Info("Service B sends the event to Error Queue", slog.Int("transactionID", tr.TransactionID))
 
 				b, _ := json.Marshal(tr)
 				err = ch.PublishWithContext(context.TODO(),
 					"saga_transaction_topic", // exchange
-					"serviceB",               // routing key
+					"error",                  // routing key
 					false,                    // mandatory
 					false,                    // immediate
 					amqp.Publishing{
@@ -62,21 +64,10 @@ func main() {
 						Body:        b,
 					})
 				failOnError(err, "Failed to publish a message")
-			} else if tr.Sender == "serviceB" {
-				if tr.ServiceBStatus {
-					slog.Info("All transactions completed successfully", slog.Int("transactionID", tr.TransactionID))
-				} else {
-					slog.Info("Service B is completed unsuccessfully. Service A Rollback is starting", slog.Int("transactionID", tr.TransactionID))
-					// Service A rollback simulation
-					time.Sleep(time.Second * 2)
-					slog.Info("Service A rollback is completed successfully", slog.Int("transactionID", tr.TransactionID))
-				}
 			}
 		}
 	}()
 
-	var forever chan struct{}
-
-	slog.Info("Service A is running. To exit press CTRL+C")
+	slog.Info("Service B is running. To exit press CTRL+C")
 	<-forever
 }

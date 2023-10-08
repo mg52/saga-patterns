@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mg52/saga-patterns/choreography/pkg"
+	"github.com/mg52/saga-patterns/pkg"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -43,28 +43,30 @@ func main() {
 		for d := range msgs {
 			var tr *pkg.Transaction
 			json.Unmarshal(d.Body, &tr)
-			slog.Info("Service B started its process by request from service A ", slog.Int("transactionID", tr.TransactionID))
-			time.Sleep(time.Second * 2)
-			slog.Info("Service B completed its process successfully", slog.Int("transactionID", tr.TransactionID))
+			if tr.Sender == "serviceA" && tr.ServiceAStatus {
+				slog.Info("Service B started its process by request from service A ", slog.Int("transactionID", tr.TransactionID))
+				time.Sleep(time.Second * 2)
+				slog.Info("Service B rollout is completed successfully", slog.Int("transactionID", tr.TransactionID))
 
-			tr.ServiceBStatus = true
-			tr.Sender = "serviceB"
-			slog.Info("Service B sends the event to Service A", slog.Int("transactionID", tr.TransactionID))
+				tr.ServiceBStatus = true
+				tr.Sender = "serviceB"
+				slog.Info("Service B sends the event to Service A", slog.Int("transactionID", tr.TransactionID))
 
-			b, _ := json.Marshal(tr)
-			err = ch.PublishWithContext(context.TODO(),
-				"saga_transaction_topic", // exchange
-				"serviceA",               // routing key
-				false,                    // mandatory
-				false,                    // immediate
-				amqp.Publishing{
-					ContentType: "text/plain",
-					Body:        b,
-				})
-			failOnError(err, "Failed to publish a message")
+				b, _ := json.Marshal(tr)
+				err = ch.PublishWithContext(context.TODO(),
+					"saga_transaction_topic", // exchange
+					"serviceA",               // routing key
+					false,                    // mandatory
+					false,                    // immediate
+					amqp.Publishing{
+						ContentType: "text/plain",
+						Body:        b,
+					})
+				failOnError(err, "Failed to publish a message")
+			}
 		}
 	}()
 
-	log.Printf("Service B is running. To exit press CTRL+C")
+	slog.Info("Service B is running. To exit press CTRL+C")
 	<-forever
 }

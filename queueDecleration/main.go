@@ -35,19 +35,6 @@ func main() {
 		return
 	}
 
-	qTransaction, err := ch.QueueDeclare(
-		"transaction_start_queue", // name
-		true,                      // durable
-		false,                     // delete when unused
-		false,                     // exclusive
-		true,                      // no-wait
-		nil,                       // arguments
-	)
-	if err != nil {
-		slog.Error("rabbitmq QueueDeclare error", err)
-		return
-	}
-
 	qServiceA, err := ch.QueueDeclare(
 		"service_a_queue", // name
 		true,              // durable
@@ -74,15 +61,16 @@ func main() {
 		return
 	}
 
-	err = ch.QueueBind(
-		qTransaction.Name,        // queue name
-		"transaction_start",      // routing key
-		"saga_transaction_topic", // exchange
-		false,
-		nil,
+	qError, err := ch.QueueDeclare(
+		"error_queue", // name
+		true,          // durable
+		false,         // delete when unused
+		false,         // exclusive
+		true,          // no-wait
+		nil,           // arguments
 	)
 	if err != nil {
-		slog.Error("rabbitmq QueueBind error", err)
+		slog.Error("rabbitmq QueueDeclare error", err)
 		return
 	}
 
@@ -101,6 +89,18 @@ func main() {
 	err = ch.QueueBind(
 		qServiceB.Name,           // queue name
 		"serviceB",               // routing key
+		"saga_transaction_topic", // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		slog.Error("rabbitmq QueueBind error", err)
+		return
+	}
+
+	err = ch.QueueBind(
+		qError.Name,              // queue name
+		"error",                  // routing key
 		"saga_transaction_topic", // exchange
 		false,
 		nil,
